@@ -5,35 +5,39 @@ pipeline {
         githubPush()
     }
 
+    environment {
+        // Your Tomcat Docker port mapping is 8082 -> 8080 (from your docker ps)
+        TOMCAT_URL = "http://54.205.47.53:8082/manager/text"
+        APP_NAME   = "myapp"
+    }
+
+    tools {
+        // These names must match Manage Jenkins -> Tools
+        maven "Maven3"
+        jdk "JDK11"
+    }
+
     stages {
 
         stage('Checkout') {
             steps {
                 git branch: 'main',
-                    url: 'https://github.com/sabinashaik/myapp.git'
+                    url: 'https://github.com/sabinashaik/myapp.git',
+                    credentialsId: 'github-creds'
             }
         }
 
-        stage('Build') {
+        stage('Build + Test + Package') {
             steps {
-                sh 'mvn clean compile'
-            }
-        }
-
-        stage('Test') {
-            steps {
-                sh 'mvn test'
-            }
-        }
-
-        stage('Package') {
-            steps {
-                sh 'mvn package'
+                sh '''
+                  mvn -U clean test package
+                '''
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
+                // This must match Manage Jenkins -> System -> SonarQube Servers -> Name
                 withSonarQubeEnv('SonarQubeServer') {
                     sh 'mvn sonar:sonar'
                 }
@@ -42,18 +46,56 @@ pipeline {
 
         stage('Upload to Nexus') {
             steps {
-                sh 'mvn deploy -DskipTests'
+                withCredentials([usernamePassword(
+                    credentialsId: 'nexus-creds',
+                    usernameVariable: 'NEXUS_USER',
+                    passwordVariable: 'NEXUS_PASS'
+                )]) {
+                    sh '''
+                      mvn deploy -DskipTests \
+                        -Dnexus.username=$NEXUS_USER \
+                        -Dnexus.password=$NEXUS_PASS
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Tomcat (Docker)') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'tomcat-creds',
+                    usernameVariable: 'TOMCAT_USER',
+                    passwordVariable: 'TOMCAT_PASS'
+                )]) {
+                    sh '''
+                      echo "Deploying WAR to Tomcat..."
+                      ls -l target || true
+
+                      # Deploy/Update the app
+                      curl -v -u $TOMCAT_USER:$TOMCAT_PASS \
+                        -T target/${APP_NAME}.war \
+                        "${TOMCAT_URL}/deploy?path=/${APP_NAME}&update=true"
+                    '''
+                }
+            }
+        }
+
+        stage('Smoke Test') {
+            steps {
+                sh '''
+                  echo "Checking app URL..."
+                  curl -I http://54.205.47.53:8082/${APP_NAME}/ || true
+                '''
             }
         }
     }
 
     post {
-        failure {
-            echo 'Pipeline failed. Email notification will be sent.'
-        }
         success {
-            echo 'Pipeline completed successfully.'
+            echo "✅ Pipeline completed successfully!"
+        }
+        failure {
+            echo "❌ Pipeline failed. Check Console Output."
         }
     }
 }
-
