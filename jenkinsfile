@@ -78,12 +78,37 @@ pipeline {
         }
     }
     post {
-        success {
-            echo " Pipeline completed successfully! hoorayyyyyyyyyyyyyy"
-        }
-        failure {
-            echo " Pipeline failed. Check Console Output."
-        }
-    }
+  success {
+    emailext(
+      subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+      body: """Build SUCCESS ✅
+
+Job: ${env.JOB_NAME}
+Build: #${env.BUILD_NUMBER}
+URL: ${env.BUILD_URL}
+""",
+      to: "sabinashaik228@gmail.com"
+    )
+  }
+
+  failure {
+    emailext(
+      subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+      body: """Build FAILED ❌
+
+Job: ${env.JOB_NAME}
+Build: #${env.BUILD_NUMBER}
+URL: ${env.BUILD_URL}
+
+Check console output in the URL above.
+""",
+      to: "sabinashaik228@gmail.com"
+    )
+  }
+
+  always {
+    cleanWs()
+  }
+}
 }
 
