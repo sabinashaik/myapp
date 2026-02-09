@@ -7,6 +7,13 @@
   <version>1.0-SNAPSHOT</version>
   <name>myapp Maven Webapp</name>
   <url>http://maven.apache.org</url>
+   <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <sonar.projectKey>myapp</sonar.projectKey>
+        <sonar.projectName>myapp</sonar.projectName>
+    </properties>
   <dependencies>
     <dependency>
       <groupId>junit</groupId>
@@ -17,5 +24,27 @@
   </dependencies>
   <build>
     <finalName>myapp</finalName>
+     <plugins>
+
+            <!-- SonarQube Plugin -->
+            <plugin>
+                <groupId>org.sonarsource.scanner.maven</groupId>
+                <artifactId>sonar-maven-plugin</artifactId>
+                <version>3.10.0.2594</version>
+            </plugin>
+
+        </plugins>
   </build>
+   <distributionManagement>
+        <repository>
+            <id>maven-releases</id>
+            <name>Releases Repo</name>
+            <url>http://52.203.118.246:8081/nexus/content/repositories/maven-releases/</url>
+        </repository>
+        <snapshotRepository>
+            <id>maven-snapshots</id>
+            <name>Snapshots Repo</name>
+            <url>http://52.203.118.246:8081/nexus/content/repositories/maven-snapshots/</url>
+        </snapshotRepository>
+    </distributionManagement>
 </project>
