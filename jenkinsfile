@@ -79,7 +79,7 @@ pipeline {
     }
     post {
         success {
-            echo " Pipeline completed successfully! hooray"
+            echo " Pipeline completed successfully! hoorayyyyyyyyyyyyyy"
         }
         failure {
             echo " Pipeline failed. Check Console Output."
