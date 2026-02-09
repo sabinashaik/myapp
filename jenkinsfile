@@ -6,7 +6,7 @@ pipeline {
     }
 
     environment {
-        TOMCAT_URL = "http://54.205.47.53:8082/manager/text"
+        TOMCAT_URL = "http://52.203.118.246:8082/manager/text"
         APP_NAME   = "myapp"
     }
 
