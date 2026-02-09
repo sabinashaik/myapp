@@ -81,7 +81,7 @@ pipeline {
   success {
     emailext(
       subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-      body: """Build SUCCESS ✅
+      body: """Build SUCCESS here
 
 Job: ${env.JOB_NAME}
 Build: #${env.BUILD_NUMBER}
