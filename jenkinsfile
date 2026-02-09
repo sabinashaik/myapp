@@ -1,0 +1,89 @@
+pipeline {
+    agent any
+
+    triggers {
+        githubPush()
+    }
+
+    environment {
+        TOMCAT_URL = "http://54.205.47.53:8082/manager/text"
+        APP_NAME   = "myapp"
+    }
+
+    tools {
+        maven "MAVEN3"
+        jdk "JDK21"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/sabinashaik/myapp.git',
+                    credentialsId: 'github-creds'
+            }
+        }
+
+        stage('Build + Test + Package') {
+            steps {
+                sh '''
+                  mvn -U clean test package
+                '''
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh 'mvn sonar:sonar'
+                }
+            }
+        }
+
+        stage('Upload to Nexus') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'nexus-creds',
+                    usernameVariable: 'NEXUS_USER',
+                    passwordVariable: 'NEXUS_PASS'
+                )]) {
+                    sh '''
+                      mvn deploy -DskipTests \
+                        -Dnexus.username=$NEXUS_USER \
+                        -Dnexus.password=$NEXUS_PASS
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Tomcat (Docker)') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'tomcat-creds',
+                    usernameVariable: 'TOMCAT_USER',
+                    passwordVariable: 'TOMCAT_PASS'
+                )]) {
+                    sh '''
+                      echo "Deploying WAR to Tomcat..."
+                      ls -l target || true
+
+                      # Deploy/Update the app
+                      curl -v -u $TOMCAT_USER:$TOMCAT_PASS \
+                        -T target/${APP_NAME}.war \
+                        "${TOMCAT_URL}/deploy?path=/${APP_NAME}&update=true"
+                    '''
+                }
+            }
+        }
+
+    post {
+        success {
+            echo " Pipeline completed successfully!"
+        }
+        failure {
+            echo " Pipeline failed. Check Console Output."
+        }
+    }
+}
+
