@@ -100,7 +100,8 @@ Build Number: ${env.BUILD_NUMBER}
                 subject: "Pipeline",
                 body: """FAILURE
 Build Number: ${env.BUILD_NUMBER}
-Failed Stage: ${env.FAILED_STAGE}
+Failed Stage: ${env.STAGE_NAME}
+Error: ${currentBuild.rawBuild.getLog(1)}
 """,
                 to: "${env.NOTIFY_TO}"
             )
