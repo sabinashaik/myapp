@@ -85,30 +85,32 @@ pipeline {
     }
 
     post {
-        success {
-            emailext(
-                subject: "Pipeline",
-                body: """SUCCESS
+  success {
+    mail(
+      to: "${env.NOTIFY_TO}",
+      subject: "Pipeline",
+      body: """SUCCESS
 Build Number: ${env.BUILD_NUMBER}
-""",
-                to: "${env.NOTIFY_TO}"
-            )
-        }
+"""
+    )
+  }
 
-        failure {
-            emailext(
-                subject: "Pipeline",
-                body: """FAILURE
+  failure {
+    mail(
+      to: "${env.NOTIFY_TO}",
+      subject: "Pipeline",
+      body: """FAILURE
 Build Number: ${env.BUILD_NUMBER}
 Failed Stage: ${env.STAGE_NAME}
-Error: ${currentBuild.rawBuild.getLog(1)}
-""",
-                to: "${env.NOTIFY_TO}"
-            )
-        }
 
-        always {
-            cleanWs()
-        }
-    }
+Console: ${env.BUILD_URL}console
+"""
+    )
+  }
+
+  always {
+    cleanWs()
+  }
+}
+
 }
