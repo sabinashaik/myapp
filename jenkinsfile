@@ -14,7 +14,7 @@ pipeline {
 
     tools {
         maven "MAVEN3"
-        jdk "JDK11"
+        jdk "JDK1"
     }
 
     stages {
@@ -31,7 +31,7 @@ pipeline {
         stage('Build + Test + Package') {
             steps {
                 script { env.FAILED_STAGE = "Build + Test + Package" }
-                sh 'mvn -U clean test package'
+                sh 'mvn -U clean test '
             }
         }
 
