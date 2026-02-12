@@ -6,19 +6,22 @@ pipeline {
     }
 
     environment {
-        TOMCAT_URL = "http://52.203.118.246:8082/manager/text"
-        APP_NAME   = "myapp"
+        TOMCAT_URL   = "http://52.203.118.246:8082/manager/text"
+        APP_NAME     = "myapp"
+        NOTIFY_TO    = "sabinashaik228@gmail.com"
+        FAILED_STAGE = ""   // will be filled before each stage runs
     }
 
     tools {
         maven "MAVEN3"
-        jdk "JDK11"
+        jdk "JDK21"
     }
 
     stages {
 
         stage('Checkout') {
             steps {
+                script { env.FAILED_STAGE = "Checkout" }
                 git branch: 'main',
                     url: 'https://github.com/sabinashaik/myapp.git',
                     credentialsId: 'github-creds'
@@ -27,14 +30,14 @@ pipeline {
 
         stage('Build + Test + Package') {
             steps {
-                sh '''
-                  mvn -U clean test package
-                '''
+                script { env.FAILED_STAGE = "Build + Test + Package" }
+                sh 'mvn -U clean test package'
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
+                script { env.FAILED_STAGE = "SonarQube Analysis" }
                 withSonarQubeEnv('SonarQube') {
                     sh 'mvn sonar:sonar'
                 }
@@ -43,6 +46,7 @@ pipeline {
 
         stage('Upload to Nexus') {
             steps {
+                script { env.FAILED_STAGE = "Upload to Nexus" }
                 withCredentials([usernamePassword(
                     credentialsId: 'nexus-creds',
                     usernameVariable: 'NEXUS_USER',
@@ -59,17 +63,19 @@ pipeline {
 
         stage('Deploy to Tomcat (Docker)') {
             steps {
+                script { env.FAILED_STAGE = "Deploy to Tomcat (Docker)" }
                 withCredentials([usernamePassword(
                     credentialsId: 'tomcat-creds',
                     usernameVariable: 'TOMCAT_USER',
                     passwordVariable: 'TOMCAT_PASS'
                 )]) {
                     sh '''
+                      set -e
                       echo "Deploying WAR to Tomcat..."
                       ls -l target || true
 
-                      # Deploy/Update the app
-                      curl -v -u $TOMCAT_USER:$TOMCAT_PASS \
+                      # Fail pipeline if Tomcat returns 4xx/5xx
+                      curl --fail -v -u $TOMCAT_USER:$TOMCAT_PASS \
                         -T target/${APP_NAME}.war \
                         "${TOMCAT_URL}/deploy?path=/${APP_NAME}&update=true"
                     '''
@@ -77,38 +83,31 @@ pipeline {
             }
         }
     }
+
     post {
-  success {
-    emailext(
-      subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-      body: """Build SUCCESS here
-
-Job: ${env.JOB_NAME}
-Build: #${env.BUILD_NUMBER}
-URL: ${env.BUILD_URL}
+        success {
+            emailext(
+                subject: "Pipeline",
+                body: """SUCCESS
+Build Number: ${env.BUILD_NUMBER}
 """,
-      to: "sabinashaik228@gmail.com"
-    )
-  }
+                to: "${env.NOTIFY_TO}"
+            )
+        }
 
-  failure {
-    emailext(
-      subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-      body: """Build FAILED ❌
-
-Job: ${env.JOB_NAME}
-Build: #${env.BUILD_NUMBER}
-URL: ${env.BUILD_URL}
-
-Check console output in the URL above.
+        failure {
+            emailext(
+                subject: "Pipeline",
+                body: """FAILURE
+Build Number: ${env.BUILD_NUMBER}
+Failed Stage: ${env.FAILED_STAGE}
 """,
-      to: "sabinashaik228@gmail.com"
-    )
-  }
+                to: "${env.NOTIFY_TO}"
+            )
+        }
 
-  always {
-    cleanWs()
-  }
+        always {
+            cleanWs()
+        }
+    }
 }
-}
-
