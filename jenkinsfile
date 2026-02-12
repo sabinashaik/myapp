@@ -39,7 +39,7 @@ pipeline {
             steps {
                 script { env.FAILED_STAGE = "SonarQube Analysis" }
                 withSonarQubeEnv('SonarQube') {
-                    sh 'mvn sonar:sonar2'
+                    sh 'mvn sonar:sonar1'
                 }
             }
         }
