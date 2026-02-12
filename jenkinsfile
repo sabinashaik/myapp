@@ -31,7 +31,7 @@ pipeline {
         stage('Build + Test + Package') {
             steps {
                 script { env.FAILED_STAGE = "Build + Test + Package" }
-                sh 'mvn -U clean test '
+                sh 'mvn -U clean test package'
             }
         }
 
@@ -39,7 +39,7 @@ pipeline {
             steps {
                 script { env.FAILED_STAGE = "SonarQube Analysis" }
                 withSonarQubeEnv('SonarQube') {
-                    sh 'mvn sonar:sonar'
+                    sh 'mvn sonar:sonar1'
                 }
             }
         }
