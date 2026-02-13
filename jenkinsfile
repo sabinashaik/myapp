@@ -102,43 +102,39 @@ pipeline {
   }
 
   post {
-    success {
+
+  success {
+    mail(
+      to: "${env.NOTIFY_TO}",
+      subject: "Pipeline",
+      body: """Pipeline SUCCESS
+Build Number: ${env.BUILD_NUMBER}
+"""
+    )
+  }
+
+  failure {
+    script {
+      // Always use LAST_STAGE (real stage), never Post Actions
+      def stageName = env.LAST_STAGE ?: env.STAGE_NAME
+
       mail(
         to: "${env.NOTIFY_TO}",
         subject: "Pipeline",
-        body: """SUCCESS
+        body: """Pipeline FAILURE
 Build Number: ${env.BUILD_NUMBER}
+Failed Stage: ${stageName}
+${env.BUILD_URL}console
 """
       )
     }
+  }
 
-    failure {
-      // If post actions fail, STAGE_NAME becomes "Declarative: Post Actions".
-      // So we prefer the captured FAIL_STAGE.
-      script {
-        def failedAt = (env.FAIL_STAGE?.trim()) ? env.FAIL_STAGE : env.STAGE_NAME
-        mail(
-          to: "${env.NOTIFY_TO}",
-          subject: "Pipeline",
-          body: """FAILURE
-Build Number: ${env.BUILD_NUMBER}
-Failed Stage: ${failedAt}
-
-Console: ${env.BUILD_URL}console
-"""
-        )
-      }
-    }
-
-    always {
-      // Don't let workspace cleanup break the result reporting
-      script {
-        try {
-          cleanWs()
-        } catch (e) {
-          echo "cleanWs failed: ${e}"
-        }
-      }
+  always {
+    script {
+      try { cleanWs() } catch(e) { echo "cleanWs failed" }
     }
   }
+}
+
 }
