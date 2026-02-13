@@ -1,15 +1,12 @@
 pipeline {
     agent any
 
-    triggers {
-        githubPush()
-    }
+    triggers { githubPush() }
 
     environment {
         TOMCAT_URL = "http://52.203.118.246:8082/manager/text"
         APP_NAME   = "myapp"
         NOTIFY_TO  = "sabinashaik228@gmail.com"
-       
     }
 
     tools {
@@ -25,23 +22,21 @@ pipeline {
                     url: 'https://github.com/sabinashaik/myapp.git',
                     credentialsId: 'github-creds'
             }
-            
         }
 
         stage('Build + Test + Package') {
             steps {
                 sh 'mvn -U clean test package'
             }
-           
         }
 
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
+                    // use sonar:sonar (sonar2 will fail)
                     sh 'mvn sonar:sonar2'
                 }
             }
-          
         }
 
         stage('Upload to Nexus') {
@@ -58,7 +53,6 @@ pipeline {
                     '''
                 }
             }
-            
         }
 
         stage('Deploy to Tomcat (Docker)') {
@@ -79,7 +73,6 @@ pipeline {
                     '''
                 }
             }
-            
         }
     }
 
@@ -90,20 +83,17 @@ pipeline {
                 body: """SUCCESS
 Job: ${env.JOB_NAME}
 Build Number: ${env.BUILD_NUMBER}
-Build URL: ${env.BUILD_URL}
 """,
                 to: "${env.NOTIFY_TO}"
             )
         }
 
-
+        failure {
             emailext(
                 subject: "Pipeline FAILURE",
                 body: """FAILURE
 Job: ${env.JOB_NAME}
 Build Number: ${env.BUILD_NUMBER}
-
-Build URL: ${env.BUILD_URL}
 """,
                 to: "${env.NOTIFY_TO}"
             )
@@ -113,4 +103,4 @@ Build URL: ${env.BUILD_URL}
             cleanWs()
         }
     }
-
+}
