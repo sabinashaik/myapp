@@ -96,20 +96,13 @@ Build URL: ${env.BUILD_URL}
             )
         }
 
-        failure {
-            // If it failed before any stage post ran, show something meaningful
-            script {
-                if (!env.FAILED_STAGE?.trim()) {
-                    env.FAILED_STAGE = "Unknown (failed before stage post executed)"
-                }
-            }
 
             emailext(
                 subject: "Pipeline FAILURE",
                 body: """FAILURE
 Job: ${env.JOB_NAME}
 Build Number: ${env.BUILD_NUMBER}
-Failed Stage: ${env.FAILED_STAGE}
+
 Build URL: ${env.BUILD_URL}
 """,
                 to: "${env.NOTIFY_TO}"
