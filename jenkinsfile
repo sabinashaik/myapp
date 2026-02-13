@@ -1,13 +1,12 @@
 pipeline {
   agent any
-
   triggers { githubPush() }
 
   environment {
-    TOMCAT_URL  = "http://52.203.118.246:8082/manager/text"
-    APP_NAME    = "myapp"
-    NOTIFY_TO   = "sabinashaik228@gmail.com"
-    FAIL_STAGE  = ""
+    TOMCAT_URL = "http://52.203.118.246:8082/manager/text"
+    APP_NAME   = "myapp"
+    NOTIFY_TO  = "sabinashaik228@gmail.com"
+    LAST_STAGE = "Not started"
   }
 
   tools {
@@ -19,122 +18,101 @@ pipeline {
 
     stage('Checkout') {
       steps {
-        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-          git branch: 'main',
-              url: 'https://github.com/sabinashaik/myapp.git',
-              credentialsId: 'github-creds'
-        }
-      }
-      post {
-        failure { script { env.FAIL_STAGE = "Checkout" } }
+        script { env.LAST_STAGE = "Checkout" }
+        git branch: 'main',
+            url: 'https://github.com/sabinashaik/myapp.git',
+            credentialsId: 'github-creds'
       }
     }
 
     stage('Build + Test + Package') {
       steps {
-        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-          sh 'mvn -U clean test package'
-        }
-      }
-      post {
-        failure { script { env.FAIL_STAGE = "Build + Test + Package" } }
+        script { env.LAST_STAGE = "Build + Test + Package" }
+        sh 'mvn -U clean test package'
       }
     }
 
-    stage('SonarQube Analysis') {
+    stage('SonarQube') {
       steps {
-        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-          withSonarQubeEnv('SonarQube') {
-            sh 'mvn sonar:sonar2'   // keep correct command here
-          }
+        script { env.LAST_STAGE = "SonarQube" }
+        withSonarQubeEnv('SonarQube') {
+          sh 'mvn sonar:sonar'   // IMPORTANT: correct goal
         }
-      }
-      post {
-        failure { script { env.FAIL_STAGE = "SonarQube Analysis" } }
       }
     }
 
     stage('Upload to Nexus') {
       steps {
-        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-          withCredentials([usernamePassword(
-            credentialsId: 'nexus-creds',
-            usernameVariable: 'NEXUS_USER',
-            passwordVariable: 'NEXUS_PASS'
-          )]) {
-            sh '''
-              mvn deploy -DskipTests \
-                -Dnexus.username=$NEXUS_USER \
-                -Dnexus.password=$NEXUS_PASS
-            '''
-          }
+        script { env.LAST_STAGE = "Upload to Nexus" }
+        withCredentials([usernamePassword(
+          credentialsId: 'nexus-creds',
+          usernameVariable: 'NEXUS_USER',
+          passwordVariable: 'NEXUS_PASS'
+        )]) {
+          sh '''
+            mvn deploy -DskipTests \
+              -Dnexus.username=$NEXUS_USER \
+              -Dnexus.password=$NEXUS_PASS
+          '''
         }
-      }
-      post {
-        failure { script { env.FAIL_STAGE = "Upload to Nexus" } }
       }
     }
 
     stage('Deploy to Tomcat (Docker)') {
       steps {
-        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-          withCredentials([usernamePassword(
-            credentialsId: 'tomcat-creds',
-            usernameVariable: 'TOMCAT_USER',
-            passwordVariable: 'TOMCAT_PASS'
-          )]) {
-            sh '''
-              set -e
-              echo "Deploying WAR to Tomcat..."
-              ls -l target || true
+        script { env.LAST_STAGE = "Deploy to Tomcat (Docker)" }
+        withCredentials([usernamePassword(
+          credentialsId: 'tomcat-creds',
+          usernameVariable: 'TOMCAT_USER',
+          passwordVariable: 'TOMCAT_PASS'
+        )]) {
+          sh '''
+            set -e
+            echo "Deploying WAR to Tomcat..."
+            ls -l target || true
 
-              curl --fail -v -u $TOMCAT_USER:$TOMCAT_PASS \
-                -T target/${APP_NAME}.war \
-                "${TOMCAT_URL}/deploy?path=/${APP_NAME}&update=true"
-            '''
-          }
+            curl --fail -v -u $TOMCAT_USER:$TOMCAT_PASS \
+              -T target/${APP_NAME}.war \
+              "${TOMCAT_URL}/deploy?path=/${APP_NAME}&update=true"
+          '''
         }
-      }
-      post {
-        failure { script { env.FAIL_STAGE = "Deploy to Tomcat (Docker)" } }
       }
     }
   }
 
   post {
-
-  success {
-    mail(
-      to: "${env.NOTIFY_TO}",
-      subject: "Pipeline",
-      body: """Pipeline SUCCESS
-Build Number: ${env.BUILD_NUMBER}
-"""
-    )
-  }
-
-  failure {
-    script {
-      // Always use LAST_STAGE (real stage), never Post Actions
-      def stageName = env.LAST_STAGE ?: env.STAGE_NAME
-
+    success {
       mail(
         to: "${env.NOTIFY_TO}",
         subject: "Pipeline",
-        body: """Pipeline FAILURE
+        body: """Pipeline SUCCESS
 Build Number: ${env.BUILD_NUMBER}
-Failed Stage: ${stageName}
-${env.BUILD_URL}console
 """
       )
     }
-  }
 
-  always {
-    script {
-      try { cleanWs() } catch(e) { echo "cleanWs failed" }
+    failure {
+      script {
+        // If Jenkins says "Declarative: Post Actions", show the last stage we entered
+        def failedStage = (env.STAGE_NAME == 'Declarative: Post Actions') ? env.LAST_STAGE : env.STAGE_NAME
+
+        mail(
+          to: "${env.NOTIFY_TO}",
+          subject: "Pipeline",
+          body: """Pipeline FAILURE
+Build Number: ${env.BUILD_NUMBER}
+Failed Stage: ${failedStage}
+${env.BUILD_URL}console
+"""
+        )
+      }
+    }
+
+    always {
+      // optional cleanup; do NOT fail the build if cleanup fails
+      script {
+        try { cleanWs() } catch (e) { echo "cleanWs failed: ${e}" }
+      }
     }
   }
-}
-
 }
