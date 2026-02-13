@@ -6,10 +6,10 @@ pipeline {
     }
 
     environment {
-        TOMCAT_URL   = "http://52.203.118.246:8082/manager/text"
-        APP_NAME     = "myapp"
-        NOTIFY_TO    = "sabinashaik228@gmail.com"
-        FAILED_STAGE = ""   // will be filled before each stage runs
+        TOMCAT_URL = "http://52.203.118.246:8082/manager/text"
+        APP_NAME   = "myapp"
+        NOTIFY_TO  = "sabinashaik228@gmail.com"
+        FAILED_STAGE = ""
     }
 
     tools {
@@ -21,32 +21,43 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                script { env.FAILED_STAGE = "Checkout" }
                 git branch: 'main',
                     url: 'https://github.com/sabinashaik/myapp.git',
                     credentialsId: 'github-creds'
+            }
+            post {
+                failure {
+                    script { env.FAILED_STAGE = "Checkout" }
+                }
             }
         }
 
         stage('Build + Test + Package') {
             steps {
-                script { env.FAILED_STAGE = "Build + Test + Package" }
                 sh 'mvn -U clean test package'
+            }
+            post {
+                failure {
+                    script { env.FAILED_STAGE = "Build + Test + Package" }
+                }
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                script { env.FAILED_STAGE = "SonarQube Analysis" }
                 withSonarQubeEnv('SonarQube') {
-                    sh 'mvn sonar:sonar2'
+                    sh 'mvn sonar:sonar'
+                }
+            }
+            post {
+                failure {
+                    script { env.FAILED_STAGE = "SonarQube Analysis" }
                 }
             }
         }
 
         stage('Upload to Nexus') {
             steps {
-                script { env.FAILED_STAGE = "Upload to Nexus" }
                 withCredentials([usernamePassword(
                     credentialsId: 'nexus-creds',
                     usernameVariable: 'NEXUS_USER',
@@ -59,11 +70,15 @@ pipeline {
                     '''
                 }
             }
+            post {
+                failure {
+                    script { env.FAILED_STAGE = "Upload to Nexus" }
+                }
+            }
         }
 
         stage('Deploy to Tomcat (Docker)') {
             steps {
-                script { env.FAILED_STAGE = "Deploy to Tomcat (Docker)" }
                 withCredentials([usernamePassword(
                     credentialsId: 'tomcat-creds',
                     usernameVariable: 'TOMCAT_USER',
@@ -74,11 +89,15 @@ pipeline {
                       echo "Deploying WAR to Tomcat..."
                       ls -l target || true
 
-                      # Fail pipeline if Tomcat returns 4xx/5xx
                       curl --fail -v -u $TOMCAT_USER:$TOMCAT_PASS \
                         -T target/${APP_NAME}.war \
                         "${TOMCAT_URL}/deploy?path=/${APP_NAME}&update=true"
                     '''
+                }
+            }
+            post {
+                failure {
+                    script { env.FAILED_STAGE = "Deploy to Tomcat (Docker)" }
                 }
             }
         }
@@ -87,20 +106,31 @@ pipeline {
     post {
         success {
             emailext(
-                subject: "Pipeline",
+                subject: "Pipeline SUCCESS",
                 body: """SUCCESS
+Job: ${env.JOB_NAME}
 Build Number: ${env.BUILD_NUMBER}
+Build URL: ${env.BUILD_URL}
 """,
                 to: "${env.NOTIFY_TO}"
             )
         }
 
         failure {
+            // If it failed before any stage post ran, show something meaningful
+            script {
+                if (!env.FAILED_STAGE?.trim()) {
+                    env.FAILED_STAGE = "Unknown (failed before stage post executed)"
+                }
+            }
+
             emailext(
-                subject: "Pipeline",
+                subject: "Pipeline FAILURE",
                 body: """FAILURE
+Job: ${env.JOB_NAME}
 Build Number: ${env.BUILD_NUMBER}
 Failed Stage: ${env.FAILED_STAGE}
+Build URL: ${env.BUILD_URL}
 """,
                 to: "${env.NOTIFY_TO}"
             )
