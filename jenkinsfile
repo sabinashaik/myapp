@@ -1,15 +1,15 @@
 pipeline {
     agent any
 
-    triggers { githubPush() }
+    triggers {
+        githubPush()
+    }
 
     environment {
-        TOMCAT_URL    = "http://52.203.118.246:8082/manager/text"
-        APP_NAME      = "myapp"
-        NOTIFY_TO     = "sabinashaik228@gmail.com"
-        FAILED_STAGE  = ""
-        FAILED_REASON = ""
-        HAS_FAILED    = "false"
+        TOMCAT_URL = "http://52.203.118.246:8082/manager/text"
+        APP_NAME   = "myapp"
+        NOTIFY_TO  = "sabinashaik228@gmail.com"
+       
     }
 
     tools {
@@ -21,120 +21,65 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                script { env.FAILED_STAGE = "Checkout" }
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    git branch: 'main',
-                        url: 'https://github.com/sabinashaik/myapp.git',
-                        credentialsId: 'github-creds'
-                }
-                script {
-                    if (currentBuild.currentResult == 'FAILURE') {
-                        env.HAS_FAILED = "true"
-                        env.FAILED_REASON = "Checkout failed"
-                    }
-                }
+                git branch: 'main',
+                    url: 'https://github.com/sabinashaik/myapp.git',
+                    credentialsId: 'github-creds'
             }
+            
         }
 
         stage('Build + Test + Package') {
             steps {
-                script { env.FAILED_STAGE = "Build + Test + Package" }
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    sh 'mvn -U clean test package'
-                }
-                script {
-                    if (currentBuild.currentResult == 'FAILURE') {
-                        env.HAS_FAILED = "true"
-                        env.FAILED_REASON = "Maven build/test/package failed"
-                    }
-                }
+                sh 'mvn -U clean test package'
             }
+           
         }
 
         stage('SonarQube Analysis') {
             steps {
-                script { env.FAILED_STAGE = "SonarQube Analysis" }
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    withSonarQubeEnv('SonarQube') {
-                        // keep sonar2 to test failure stage reporting
-                        sh 'mvn sonar:sonar2'
-                        // correct one is: sh 'mvn sonar:sonar'
-                    }
-                }
-                script {
-                    if (currentBuild.currentResult == 'FAILURE') {
-                        env.HAS_FAILED = "true"
-                        env.FAILED_REASON = "SonarQube analysis failed"
-                    }
+                withSonarQubeEnv('SonarQube') {
+                    sh 'mvn sonar:sonar'
                 }
             }
+          
         }
 
         stage('Upload to Nexus') {
-            when { expression { env.HAS_FAILED != "true" } }
             steps {
-                script { env.FAILED_STAGE = "Upload to Nexus" }
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    withCredentials([usernamePassword(
-                        credentialsId: 'nexus-creds',
-                        usernameVariable: 'NEXUS_USER',
-                        passwordVariable: 'NEXUS_PASS'
-                    )]) {
-                        sh '''
-                          mvn deploy -DskipTests \
-                            -Dnexus.username=$NEXUS_USER \
-                            -Dnexus.password=$NEXUS_PASS
-                        '''
-                    }
-                }
-                script {
-                    if (currentBuild.currentResult == 'FAILURE') {
-                        env.HAS_FAILED = "true"
-                        env.FAILED_REASON = "Nexus upload failed"
-                    }
+                withCredentials([usernamePassword(
+                    credentialsId: 'nexus-creds',
+                    usernameVariable: 'NEXUS_USER',
+                    passwordVariable: 'NEXUS_PASS'
+                )]) {
+                    sh '''
+                      mvn deploy -DskipTests \
+                        -Dnexus.username=$NEXUS_USER \
+                        -Dnexus.password=$NEXUS_PASS
+                    '''
                 }
             }
+            
         }
 
         stage('Deploy to Tomcat (Docker)') {
-            when { expression { env.HAS_FAILED != "true" } }
             steps {
-                script { env.FAILED_STAGE = "Deploy to Tomcat (Docker)" }
-                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                    withCredentials([usernamePassword(
-                        credentialsId: 'tomcat-creds',
-                        usernameVariable: 'TOMCAT_USER',
-                        passwordVariable: 'TOMCAT_PASS'
-                    )]) {
-                        sh '''
-                          set -e
-                          echo "Deploying WAR to Tomcat..."
-                          ls -l target || true
+                withCredentials([usernamePassword(
+                    credentialsId: 'tomcat-creds',
+                    usernameVariable: 'TOMCAT_USER',
+                    passwordVariable: 'TOMCAT_PASS'
+                )]) {
+                    sh '''
+                      set -e
+                      echo "Deploying WAR to Tomcat..."
+                      ls -l target || true
 
-                          curl --fail -v -u $TOMCAT_USER:$TOMCAT_PASS \
-                            -T target/${APP_NAME}.war \
-                            "${TOMCAT_URL}/deploy?path=/${APP_NAME}&update=true"
-                        '''
-                    }
-                }
-                script {
-                    if (currentBuild.currentResult == 'FAILURE') {
-                        env.HAS_FAILED = "true"
-                        env.FAILED_REASON = "Tomcat deployment failed"
-                    }
+                      curl --fail -v -u $TOMCAT_USER:$TOMCAT_PASS \
+                        -T target/${APP_NAME}.war \
+                        "${TOMCAT_URL}/deploy?path=/${APP_NAME}&update=true"
+                    '''
                 }
             }
-        }
-
-        // Final gate: make the whole pipeline FAIL if any stage failed
-        stage('Fail Pipeline if Any Stage Failed') {
-            steps {
-                script {
-                    if (env.HAS_FAILED == "true") {
-                        error("Pipeline failed at stage: ${env.FAILED_STAGE} | Reason: ${env.FAILED_REASON}")
-                    }
-                }
-            }
+            
         }
     }
 
@@ -152,18 +97,19 @@ Build URL: ${env.BUILD_URL}
         }
 
         failure {
+            // If it failed before any stage post ran, show something meaningful
             script {
                 if (!env.FAILED_STAGE?.trim()) {
-                    env.FAILED_STAGE = "Unknown"
+                    env.FAILED_STAGE = "Unknown (failed before stage post executed)"
                 }
             }
+
             emailext(
                 subject: "Pipeline FAILURE",
                 body: """FAILURE
 Job: ${env.JOB_NAME}
 Build Number: ${env.BUILD_NUMBER}
 Failed Stage: ${env.FAILED_STAGE}
-Reason: ${env.FAILED_REASON}
 Build URL: ${env.BUILD_URL}
 """,
                 to: "${env.NOTIFY_TO}"
