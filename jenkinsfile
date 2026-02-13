@@ -32,9 +32,9 @@ pipeline {
 
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('SonarQube') {
-                    // use sonar:sonar (sonar2 will fail)
-                    sh 'mvn sonar:sonar2'
+                withSonarQubeEnv('SonarQube') 
+                {
+                    sh 'mvn sonar:sonar'
                 }
             }
         }
