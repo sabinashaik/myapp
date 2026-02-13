@@ -6,7 +6,7 @@ pipeline {
     TOMCAT_URL = "http://52.203.118.246:8082/manager/text"
     APP_NAME   = "myapp"
     NOTIFY_TO  = "sabinashaik228@gmail.com"
-    LAST_STAGE = "Not started"
+    LAST_STAGE = "Checkout"
   }
 
   tools {
