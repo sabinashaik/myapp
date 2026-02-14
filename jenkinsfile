@@ -1,12 +1,15 @@
 pipeline {
     agent any
 
-    triggers { githubPush() }
+    // ❌ Removed githubPush() → manual pipeline
+    parameters {
+        string(name: 'BRANCH_NAME', defaultValue: 'main', description: 'Branch name (br1, br2, br3, main)')
+        choice(name: 'ENV', choices: ['dev', 'qa', 'prod'], description: 'Select Environment')
+    }
 
     environment {
-        TOMCAT_URL = "http://52.203.118.246:8082/manager/text"
-        APP_NAME   = "myapp"
-        NOTIFY_TO  = "sabinashaik228@gmail.com"
+        APP_NAME  = "myapp"
+        NOTIFY_TO = "sabinashaik228@gmail.com"
     }
 
     tools {
@@ -18,22 +21,49 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                git branch: 'main',
+                git branch: "${params.BRANCH_NAME}",
                     url: 'https://github.com/sabinashaik/myapp.git',
                     credentialsId: 'github-creds'
             }
         }
 
+        stage('Read Properties') {
+            steps {
+                script {
+                    def props = readProperties file: 'jenkins/pipeline.properties'
+
+                    def allowedBranches = props['allowed.branches'].split(',').collect { it.trim() }
+                    def allowedEnvs     = props['allowed.envs'].split(',').collect { it.trim() }
+
+                    if (!allowedBranches.contains(params.BRANCH_NAME)) {
+                        error "Invalid branch ${params.BRANCH_NAME}. Allowed: ${allowedBranches}"
+                    }
+
+                    if (!allowedEnvs.contains(params.ENV)) {
+                        error "Invalid ENV ${params.ENV}. Allowed: ${allowedEnvs}"
+                    }
+
+                    env.TOMCAT_URL   = props["${params.ENV}.tomcat.url"]
+                    env.TOMCAT_CREDS = props["${params.ENV}.tomcat.creds"]
+                    env.SONAR_SERVER = props['sonar.server']
+                    env.MVN_CMD      = props['mvn.cmd']
+                    env.CONTEXT_PATH = props['context.path']
+
+                    echo "ENV=${params.ENV}"
+                    echo "Deploying to ${env.TOMCAT_URL}"
+                }
+            }
+        }
+
         stage('Build + Test + Package') {
             steps {
-                sh 'mvn -U clean test package'
+                sh "${env.MVN_CMD}"
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                withSonarQubeEnv('SonarQube') 
-                {
+                withSonarQubeEnv("${env.SONAR_SERVER}") {
                     sh 'mvn sonar:sonar'
                 }
             }
@@ -55,22 +85,21 @@ pipeline {
             }
         }
 
-        stage('Deploy to Tomcat (Docker)') {
+        stage('Deploy to Tomcat') {
             steps {
                 withCredentials([usernamePassword(
-                    credentialsId: 'tomcat-creds',
+                    credentialsId: "${env.TOMCAT_CREDS}",
                     usernameVariable: 'TOMCAT_USER',
                     passwordVariable: 'TOMCAT_PASS'
                 )]) {
-                    sh '''
-                      set -e
-                      echo "Deploying WAR to Tomcat..."
+                    sh """
+                      echo "Deploying to ${params.ENV} Tomcat"
                       ls -l target || true
 
-                      curl --fail -v -u $TOMCAT_USER:$TOMCAT_PASS \
+                      curl --fail -v -u \$TOMCAT_USER:\$TOMCAT_PASS \
                         -T target/${APP_NAME}.war \
-                        "${TOMCAT_URL}/deploy?path=/${APP_NAME}&update=true"
-                    '''
+                        "${env.TOMCAT_URL}/deploy?path=${env.CONTEXT_PATH}&update=true"
+                    """
                 }
             }
         }
@@ -79,10 +108,12 @@ pipeline {
     post {
         success {
             emailext(
-                subject: "Pipeline",
+                subject: "Pipeline SUCCESS",
                 body: """SUCCESS
 Job: ${env.JOB_NAME}
 Build Number: ${env.BUILD_NUMBER}
+ENV: ${params.ENV}
+Branch: ${params.BRANCH_NAME}
 """,
                 to: "${env.NOTIFY_TO}"
             )
@@ -90,10 +121,12 @@ Build Number: ${env.BUILD_NUMBER}
 
         failure {
             emailext(
-                subject: "Pipeline",
+                subject: "Pipeline FAILURE",
                 body: """FAILURE
 Job: ${env.JOB_NAME}
 Build Number: ${env.BUILD_NUMBER}
+ENV: ${params.ENV}
+Branch: ${params.BRANCH_NAME}
 """,
                 to: "${env.NOTIFY_TO}"
             )
