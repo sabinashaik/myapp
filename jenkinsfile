@@ -27,33 +27,36 @@ pipeline {
             }
         }
 
-        stage('Read Properties') {
-            steps {
-                script {
-                    def props = readProperties file: 'jenkins/pipeline.properties'
+        stage('Read Properties (no plugin)') {
+    steps {
+        script {
+            def allowedBranches = sh(script: "grep -E '^allowed\\.branches=' -m1 jenkins/pipeline.properties | cut -d= -f2-", returnStdout: true).trim()
+            def allowedEnvs     = sh(script: "grep -E '^allowed\\.envs=' -m1 jenkins/pipeline.properties | cut -d= -f2-", returnStdout: true).trim()
 
-                    def allowedBranches = props['allowed.branches'].split(',').collect { it.trim() }
-                    def allowedEnvs     = props['allowed.envs'].split(',').collect { it.trim() }
+            def branchesList = allowedBranches.split(',').collect { it.trim() }
+            def envList      = allowedEnvs.split(',').collect { it.trim() }
 
-                    if (!allowedBranches.contains(params.BRANCH_NAME)) {
-                        error "Invalid branch ${params.BRANCH_NAME}. Allowed: ${allowedBranches}"
-                    }
-
-                    if (!allowedEnvs.contains(params.ENV)) {
-                        error "Invalid ENV ${params.ENV}. Allowed: ${allowedEnvs}"
-                    }
-
-                    env.TOMCAT_URL   = props["${params.ENV}.tomcat.url"]
-                    env.TOMCAT_CREDS = props["${params.ENV}.tomcat.creds"]
-                    env.SONAR_SERVER = props['sonar.server']
-                    env.MVN_CMD      = props['mvn.cmd']
-                    env.CONTEXT_PATH = props['context.path']
-
-                    echo "ENV=${params.ENV}"
-                    echo "Deploying to ${env.TOMCAT_URL}"
-                }
+            if (!branchesList.contains(params.BRANCH_NAME)) {
+                error "Invalid branch ${params.BRANCH_NAME}. Allowed: ${branchesList}"
             }
+            if (!envList.contains(params.ENV)) {
+                error "Invalid ENV ${params.ENV}. Allowed: ${envList}"
+            }
+
+            env.TOMCAT_URL   = sh(script: "grep -E '^${params.ENV}\\.tomcat\\.url=' -m1 jenkins/pipeline.properties | cut -d= -f2-", returnStdout: true).trim()
+            env.TOMCAT_CREDS = sh(script: "grep -E '^${params.ENV}\\.tomcat\\.creds=' -m1 jenkins/pipeline.properties | cut -d= -f2-", returnStdout: true).trim()
+            env.SONAR_SERVER = sh(script: "grep -E '^sonar\\.server=' -m1 jenkins/pipeline.properties | cut -d= -f2-", returnStdout: true).trim()
+            env.MVN_CMD      = sh(script: "grep -E '^mvn\\.cmd=' -m1 jenkins/pipeline.properties | cut -d= -f2-", returnStdout: true).trim()
+            env.CONTEXT_PATH = sh(script: "grep -E '^context\\.path=' -m1 jenkins/pipeline.properties | cut -d= -f2-", returnStdout: true).trim()
+
+            if (!env.TOMCAT_URL)   { error "Missing ${params.ENV}.tomcat.url in properties file" }
+            if (!env.TOMCAT_CREDS) { error "Missing ${params.ENV}.tomcat.creds in properties file" }
+
+            echo "Loaded: ENV=${params.ENV}, TOMCAT_URL=${env.TOMCAT_URL}, CREDS=${env.TOMCAT_CREDS}"
         }
+    }
+}
+
 
         stage('Build + Test + Package') {
             steps {
