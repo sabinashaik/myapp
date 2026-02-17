@@ -27,15 +27,12 @@ pipeline {
       }
     }
 
-    // ✅ Ultra-Simple Properties Reader
     stage('Read Properties') {
       steps {
         script {
-
           def lines = readFile('jenkins/pipeline.properties').split('\n')
 
           lines.each { line ->
-
             if (line.startsWith("sonar.server="))
               env.SONAR_SERVER = line.split('=')[1].trim()
 
@@ -56,7 +53,12 @@ pipeline {
             error "Missing Tomcat values for ENV=${params.ENV}"
           }
 
-          echo "Loaded properties for ENV=${params.ENV}"
+          // safety: ensure leading /
+          if (env.CONTEXT_PATH && !env.CONTEXT_PATH.startsWith('/')) {
+            env.CONTEXT_PATH = "/${env.CONTEXT_PATH}"
+          }
+
+          echo "Loaded properties for ENV=${params.ENV}, CONTEXT_PATH=${env.CONTEXT_PATH}"
         }
       }
     }
@@ -91,6 +93,7 @@ pipeline {
       }
     }
 
+    // ✅ Deploy on success path
     stage('Deploy to Tomcat') {
       steps {
         withCredentials([usernamePassword(
@@ -98,10 +101,14 @@ pipeline {
           usernameVariable: 'TOMCAT_USER',
           passwordVariable: 'TOMCAT_PASS'
         )]) {
-           sh """
-    curl --fail -u \$TOMCAT_USER:\$TOMCAT_PASS \
-      "${env.TOMCAT_URL}/undeploy?path=${env.CONTEXT_PATH}"
-      """
+          sh """
+            echo "Deploying WAR to ${env.TOMCAT_URL} with context ${env.CONTEXT_PATH}"
+            ls -l target || true
+
+            curl --fail -u \$TOMCAT_USER:\$TOMCAT_PASS \
+              -T target/${APP_NAME}.war \
+              "${env.TOMCAT_URL}/deploy?path=${env.CONTEXT_PATH}&update=true"
+          """
         }
       }
     }
@@ -122,7 +129,27 @@ Branch: ${params.BRANCH_NAME}
       )
     }
 
+    // ✅ Undeploy only when pipeline fails
     failure {
+
+      script {
+        if (env.TOMCAT_URL && env.TOMCAT_CREDS && env.CONTEXT_PATH) {
+          withCredentials([usernamePassword(
+            credentialsId: "${env.TOMCAT_CREDS}",
+            usernameVariable: 'TOMCAT_USER',
+            passwordVariable: 'TOMCAT_PASS'
+          )]) {
+            sh """
+              echo "Pipeline FAILED -> undeploying ${env.CONTEXT_PATH} from ${env.TOMCAT_URL}"
+              curl --fail -u \$TOMCAT_USER:\$TOMCAT_PASS \
+                "${env.TOMCAT_URL}/undeploy?path=${env.CONTEXT_PATH}"
+            """
+          }
+        } else {
+          echo "Skipping undeploy (Tomcat values not available)"
+        }
+      }
+
       emailext(
         subject: "Pipeline FAILURE",
         body: """FAILURE
