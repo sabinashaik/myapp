@@ -1,142 +1,145 @@
 pipeline {
-    agent any
 
-    // ❌ Removed githubPush() → manual pipeline
-    parameters {
-        string(name: 'BRANCH_NAME', defaultValue: 'main', description: 'Branch name (br1, br2, br3, main)')
-        choice(name: 'ENV', choices: ['dev', 'qa', 'prod'], description: 'Select Environment')
+  agent any
+
+  parameters {
+    string(name: 'BRANCH_NAME', defaultValue: 'main', description: 'Git branch name')
+    choice(name: 'ENV', choices: ['dev', 'qa', 'prod'], description: 'Select Environment')
+  }
+
+  environment {
+    APP_NAME  = "myapp"
+    NOTIFY_TO = "sabinashaik228@gmail.com"
+  }
+
+  tools {
+    maven "MAVEN3"
+    jdk "JDK21"
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        git branch: "${params.BRANCH_NAME}",
+            url: 'https://github.com/sabinashaik/myapp.git',
+            credentialsId: 'github-creds'
+      }
     }
 
-    environment {
-        APP_NAME  = "myapp"
-        NOTIFY_TO = "sabinashaik228@gmail.com"
-    }
-
-    tools {
-        maven "MAVEN3"
-        jdk "JDK21"
-    }
-
-    stages {
-
-        stage('Checkout') {
-            steps {
-                git branch: "${params.BRANCH_NAME}",
-                    url: 'https://github.com/sabinashaik/myapp.git',
-                    credentialsId: 'github-creds'
-            }
-        }
-
-        stage('Read Properties (no plugin)') {
-    steps {
+    // ✅ Ultra-Simple Properties Reader
+    stage('Read Properties') {
+      steps {
         script {
-            def allowedBranches = sh(script: "grep -E '^allowed\\.branches=' -m1 jenkins/pipeline.properties | cut -d= -f2-", returnStdout: true).trim()
-            def allowedEnvs     = sh(script: "grep -E '^allowed\\.envs=' -m1 jenkins/pipeline.properties | cut -d= -f2-", returnStdout: true).trim()
 
-            def branchesList = allowedBranches.split(',').collect { it.trim() }
-            def envList      = allowedEnvs.split(',').collect { it.trim() }
+          def lines = readFile('jenkins/pipeline.properties').split('\n')
 
-            if (!branchesList.contains(params.BRANCH_NAME)) {
-                error "Invalid branch ${params.BRANCH_NAME}. Allowed: ${branchesList}"
-            }
-            if (!envList.contains(params.ENV)) {
-                error "Invalid ENV ${params.ENV}. Allowed: ${envList}"
-            }
+          lines.each { line ->
 
-            env.TOMCAT_URL   = sh(script: "grep -E '^${params.ENV}\\.tomcat\\.url=' -m1 jenkins/pipeline.properties | cut -d= -f2-", returnStdout: true).trim()
-            env.TOMCAT_CREDS = sh(script: "grep -E '^${params.ENV}\\.tomcat\\.creds=' -m1 jenkins/pipeline.properties | cut -d= -f2-", returnStdout: true).trim()
-            env.SONAR_SERVER = sh(script: "grep -E '^sonar\\.server=' -m1 jenkins/pipeline.properties | cut -d= -f2-", returnStdout: true).trim()
-            env.MVN_CMD      = sh(script: "grep -E '^mvn\\.cmd=' -m1 jenkins/pipeline.properties | cut -d= -f2-", returnStdout: true).trim()
-            env.CONTEXT_PATH = sh(script: "grep -E '^context\\.path=' -m1 jenkins/pipeline.properties | cut -d= -f2-", returnStdout: true).trim()
+            if (line.startsWith("sonar.server="))
+              env.SONAR_SERVER = line.split('=')[1].trim()
 
-            if (!env.TOMCAT_URL)   { error "Missing ${params.ENV}.tomcat.url in properties file" }
-            if (!env.TOMCAT_CREDS) { error "Missing ${params.ENV}.tomcat.creds in properties file" }
+            if (line.startsWith("mvn.cmd="))
+              env.MVN_CMD = line.split('=')[1].trim()
 
-            echo "Loaded: ENV=${params.ENV}, TOMCAT_URL=${env.TOMCAT_URL}, CREDS=${env.TOMCAT_CREDS}"
+            if (line.startsWith("context.path="))
+              env.CONTEXT_PATH = line.split('=')[1].trim()
+
+            if (line.startsWith("${params.ENV}.tomcat.url="))
+              env.TOMCAT_URL = line.split('=')[1].trim()
+
+            if (line.startsWith("${params.ENV}.tomcat.creds="))
+              env.TOMCAT_CREDS = line.split('=')[1].trim()
+          }
+
+          if (!env.TOMCAT_URL || !env.TOMCAT_CREDS) {
+            error "Missing Tomcat values for ENV=${params.ENV}"
+          }
+
+          echo "Loaded properties for ENV=${params.ENV}"
         }
-    }
-}
-
-
-        stage('Build + Test + Package') {
-            steps {
-                sh "${env.MVN_CMD}"
-            }
-        }
-
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv("${env.SONAR_SERVER}") {
-                    sh 'mvn sonar:sonar'
-                }
-            }
-        }
-
-        stage('Upload to Nexus') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'nexus-creds',
-                    usernameVariable: 'NEXUS_USER',
-                    passwordVariable: 'NEXUS_PASS'
-                )]) {
-                    sh '''
-                      mvn deploy -DskipTests \
-                        -Dnexus.username=$NEXUS_USER \
-                        -Dnexus.password=$NEXUS_PASS
-                    '''
-                }
-            }
-        }
-
-        stage('Deploy to Tomcat') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: "${env.TOMCAT_CREDS}",
-                    usernameVariable: 'TOMCAT_USER',
-                    passwordVariable: 'TOMCAT_PASS'
-                )]) {
-                    sh """
-                      echo "Deploying to ${params.ENV} Tomcat"
-                      ls -l target || true
-
-                      curl --fail -v -u \$TOMCAT_USER:\$TOMCAT_PASS \
-                        -T target/${APP_NAME}.war \
-                        "${env.TOMCAT_URL}/deploy?path=${env.CONTEXT_PATH}&update=true"
-                    """
-                }
-            }
-        }
+      }
     }
 
-    post {
-        success {
-            emailext(
-                subject: "Pipeline SUCCESS",
-                body: """SUCCESS
+    stage('Build + Test + Package') {
+      steps {
+        sh "${env.MVN_CMD}"
+      }
+    }
+
+    stage('SonarQube Analysis') {
+      steps {
+        withSonarQubeEnv("${env.SONAR_SERVER}") {
+          sh 'mvn sonar:sonar'
+        }
+      }
+    }
+
+    stage('Upload to Nexus') {
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: 'nexus-creds',
+          usernameVariable: 'NEXUS_USER',
+          passwordVariable: 'NEXUS_PASS'
+        )]) {
+          sh '''
+            mvn deploy -DskipTests \
+              -Dnexus.username=$NEXUS_USER \
+              -Dnexus.password=$NEXUS_PASS
+          '''
+        }
+      }
+    }
+
+    stage('Deploy to Tomcat') {
+      steps {
+        withCredentials([usernamePassword(
+          credentialsId: "${env.TOMCAT_CREDS}",
+          usernameVariable: 'TOMCAT_USER',
+          passwordVariable: 'TOMCAT_PASS'
+        )]) {
+          sh """
+            echo "Deploying to ${params.ENV} Tomcat"
+
+            curl --fail -u \$TOMCAT_USER:\$TOMCAT_PASS \
+              -T target/${APP_NAME}.war \
+              "${env.TOMCAT_URL}/deploy?path=${env.CONTEXT_PATH}&update=true"
+          """
+        }
+      }
+    }
+  }
+
+  post {
+
+    success {
+      emailext(
+        subject: "Pipeline SUCCESS",
+        body: """SUCCESS
 Job: ${env.JOB_NAME}
 Build Number: ${env.BUILD_NUMBER}
 ENV: ${params.ENV}
 Branch: ${params.BRANCH_NAME}
 """,
-                to: "${env.NOTIFY_TO}"
-            )
-        }
+        to: "${env.NOTIFY_TO}"
+      )
+    }
 
-        failure {
-            emailext(
-                subject: "Pipeline FAILURE",
-                body: """FAILURE
+    failure {
+      emailext(
+        subject: "Pipeline FAILURE",
+        body: """FAILURE
 Job: ${env.JOB_NAME}
 Build Number: ${env.BUILD_NUMBER}
 ENV: ${params.ENV}
 Branch: ${params.BRANCH_NAME}
 """,
-                to: "${env.NOTIFY_TO}"
-            )
-        }
-
-        always {
-            cleanWs()
-        }
+        to: "${env.NOTIFY_TO}"
+      )
     }
+
+    always {
+      cleanWs()
+    }
+  }
 }
