@@ -3,7 +3,7 @@ pipeline {
   agent any
 
   parameters {
-    string(name: 'BRANCH_NAME', choices: ['main', 'br1', 'br2' , 'br3' ], description: 'Select branch')
+    string(name: 'BRANCH_NAME', default: 'main', description: 'Select branch')
     choice(name: 'ENV', choices: ['dev', 'qa', 'prod'], description: 'Select Environment')
   }
 
