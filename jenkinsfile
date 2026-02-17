@@ -118,7 +118,7 @@ pipeline {
 
     success {
       emailext(
-        subject: "Pipeline SUCCESS",
+        subject: "Pipeline",
         body: """SUCCESS
 Job: ${env.JOB_NAME}
 Build Number: ${env.BUILD_NUMBER}
@@ -151,7 +151,7 @@ Branch: ${params.BRANCH_NAME}
       }
 
       emailext(
-        subject: "Pipeline FAILURE",
+        subject: "Pipeline",
         body: """FAILURE
 Job: ${env.JOB_NAME}
 Build Number: ${env.BUILD_NUMBER}
