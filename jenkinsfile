@@ -98,13 +98,10 @@ pipeline {
           usernameVariable: 'TOMCAT_USER',
           passwordVariable: 'TOMCAT_PASS'
         )]) {
-          sh """
-            echo "Deploying to ${params.ENV} Tomcat"
-
-            curl --fail -u \$TOMCAT_USER:\$TOMCAT_PASS \
-              -T target/${APP_NAME}.war \
-              "${env.TOMCAT_URL}/deploy?path=${env.CONTEXT_PATH}&update=true"
-          """
+           sh """
+    curl --fail -u \$TOMCAT_USER:\$TOMCAT_PASS \
+      "${env.TOMCAT_URL}/undeploy?path=${env.CONTEXT_PATH}"
+      """
         }
       }
     }
