@@ -108,7 +108,7 @@ pipeline {
 
     success {
       emailext(
-        subject: "Pipeline  - ${env.BRANCH_NAME}",
+        subject: "Pipeline",
         body: """SUCCESS
 
 Branch: ${env.BRANCH_NAME}
@@ -122,7 +122,7 @@ URL: ${env.BUILD_URL}
 
     failure {
       emailext(
-        subject: "Pipeline  - ${env.BRANCH_NAME}",
+        subject: "Pipeline",
         body: """FAILURE
 
 Branch: ${env.BRANCH_NAME}
