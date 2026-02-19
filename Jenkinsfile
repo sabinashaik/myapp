@@ -17,15 +17,6 @@ pipeline {
   }
 
   stages {
-
-    stage('Checkout Code') {
-  steps {
-    git branch: 'main',
-        url: 'https://github.com/sabinashaik/myapp.git',
-        credentialsId: 'github-creds'
-  }
-}
-
     stage('Auto Detect Branch & Map ENV') {
       steps {
         script {
