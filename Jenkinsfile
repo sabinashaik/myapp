@@ -13,7 +13,7 @@ pipeline {
 
     stages {
 
-        stage('Auto Detect Branch and  Map Environment') {
+        stage('Auto Detect Branch &  Map Environment') {
             steps {
                 script {
 
