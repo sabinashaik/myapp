@@ -67,19 +67,24 @@ pipeline {
             }
         }
 
-        stage('Deploy to Tomcat') {
-            steps {
-                deploy adapters: [
-                    tomcat9(
-                        credentialsId: "${env.TOMCAT_CREDS}",
-                        path: '',
-                        url: "${env.TOMCAT_URL}"
-                    )
-                ],
-                contextPath: 'myapp',
-                war: '**/target/*.war'
-            }
+       stage('Deploy to Tomcat') {
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: "${env.TOMCAT_CREDS}",
+            usernameVariable: 'TOMCAT_USER',
+            passwordVariable: 'TOMCAT_PASS'
+        )]) {
+
+            sh """
+            echo "Deploying WAR to ${env.TOMCAT_URL}"
+            
+            curl --fail -u $TOMCAT_USER:$TOMCAT_PASS \
+            -T target/${APP_NAME}.war \
+            "${env.TOMCAT_URL}/deploy?path=${env.CONTEXT_PATH}&update=true"
+            """
         }
+    }
+}
     }
 
   post {
