@@ -1,108 +1,84 @@
 pipeline {
+    agent any
 
-  agent any
+    tools {
+        maven 'Maven'
+        jdk 'JDK'
+    }
 
-  triggers {
-    githubPush()
-  }
+    environment {
+        SONAR_SERVER = 'SonarQube'
+    }
 
-  tools {
-    maven "MAVEN3"
-    jdk "JDK21"
-  }
+    stages {
 
-  environment {
-    APP_NAME  = "myapp"
-    NOTIFY_TO = "sabinashaik228@gmail.com"
-  }
+        stage('Auto Detect Branch & Map Environment') {
+            steps {
+                script {
 
-  stages {
-    stage('Auto Detect Branch & Map ENV') {
-      steps {
-        script {
+                    // Detect branch dynamically
+                    env.BRANCH_NAME = env.GIT_BRANCH.tokenize('/').last()
+                    echo "Detected Branch: ${env.BRANCH_NAME}"
 
-          // Detect branch automatically
-          env.BRANCH_NAME = env.GIT_BRANCH.tokenize('/').last()
+                    // Load properties file
+                    def props = readProperties file: 'jenkins/build.properties'
 
-          // Map branch to environment
-          if (env.BRANCH_NAME == "br1") {
-              env.ENV_NAME = "dev"
-          }
-          else if (env.BRANCH_NAME == "br2") {
-              env.ENV_NAME = "qa"
-          }
-          else if (env.BRANCH_NAME == "main") {
-              env.ENV_NAME = "prod"
-          }
-          else {
-              error "Branch ${env.BRANCH_NAME} not mapped to any environment"
-          }
+                    // Get environment name from branch mapping
+                    env.ENV_NAME = props["${env.BRANCH_NAME}.env"]
 
-          echo "Detected Branch: ${env.BRANCH_NAME}"
-          echo "Mapped Environment: ${env.ENV_NAME}"
+                    if (!env.ENV_NAME) {
+                        error "No environment mapping found for branch ${env.BRANCH_NAME}"
+                    }
 
-          // Load environment config
-          def props = readProperties file: 'jenkins/build.properties'
+                    echo "Mapped Environment: ${env.ENV_NAME}"
 
-          env.TOMCAT_URL   = props["${env.ENV_NAME}.tomcat.url"]
-          env.TOMCAT_CREDS = props["${env.ENV_NAME}.tomcat.creds"]
+                    // Load environment specific configurations
+                    env.TOMCAT_URL   = props["${env.ENV_NAME}.tomcat.url"]
+                    env.TOMCAT_CREDS = props["${env.ENV_NAME}.tomcat.creds"]
 
-          if (!env.TOMCAT_URL) {
-              error "Environment configuration missing"
-          }
+                    if (!env.TOMCAT_URL || !env.TOMCAT_CREDS) {
+                        error "Tomcat configuration missing for environment ${env.ENV_NAME}"
+                    }
+
+                    echo "Tomcat URL: ${env.TOMCAT_URL}"
+                }
+            }
         }
-      }
-    }
 
-    stage('Build + Test + Package') {
-      steps {
-        sh 'mvn -U clean test package'
-      }
-    }
-
-    stage('SonarQube Analysis') {
-      steps {
-        withSonarQubeEnv('SonarQube') {
-          sh 'mvn sonar:sonar'
+        stage('Build + Test + Package') {
+            steps {
+                sh 'mvn clean package'
+            }
         }
-      }
-    }
 
-    stage('Upload to Nexus') {
-      steps {
-        withCredentials([usernamePassword(
-          credentialsId: 'nexus-creds',
-          usernameVariable: 'NEXUS_USER',
-          passwordVariable: 'NEXUS_PASS'
-        )]) {
-
-          sh '''
-            mvn deploy -DskipTests \
-              -Dnexus.username=$NEXUS_USER \
-              -Dnexus.password=$NEXUS_PASS
-          '''
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv("${SONAR_SERVER}") {
+                    sh 'mvn sonar:sonar'
+                }
+            }
         }
-      }
-    }
 
-    stage('Deploy to Tomcat') {
-      steps {
-        withCredentials([usernamePassword(
-          credentialsId: "${env.TOMCAT_CREDS}",
-          usernameVariable: 'TOMCAT_USER',
-          passwordVariable: 'TOMCAT_PASS'
-        )]) {
-
-          sh """
-            echo "Deploying to ${env.ENV_NAME}..."
-            curl --fail -u \$TOMCAT_USER:\$TOMCAT_PASS \
-              -T target/${APP_NAME}.war \
-              "${env.TOMCAT_URL}/deploy?path=/${APP_NAME}&update=true"
-          """
+        stage('Upload Artifact to Nexus') {
+            steps {
+                sh 'mvn deploy'
+            }
         }
-      }
+
+        stage('Deploy to Tomcat') {
+            steps {
+                deploy adapters: [
+                    tomcat9(
+                        credentialsId: "${env.TOMCAT_CREDS}",
+                        path: '',
+                        url: "${env.TOMCAT_URL}"
+                    )
+                ],
+                contextPath: 'myapp',
+                war: '**/target/*.war'
+            }
+        }
     }
-  }
 
   post {
 
