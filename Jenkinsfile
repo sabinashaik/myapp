@@ -8,6 +8,7 @@ pipeline {
 
     environment {
         SONAR_SERVER = 'SonarQube'
+        NOTIFY_TO = "sabinashaik228@gmail.com"
 
     }
 
