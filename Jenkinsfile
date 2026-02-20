@@ -7,8 +7,7 @@ pipeline {
     }
 
     environment {
-        APP_NAME  = "myapp"
-    NOTIFY_TO = "sabinashaik228@gmail.com"
+        ENV_NAME='SONAR_SERVER'
 
     }
 
