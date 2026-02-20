@@ -7,7 +7,7 @@ pipeline {
     }
 
     environment {
-        ENV_NAME='SONAR_SERVER'
+        SONAR_SERVER = 'SonarQube'
 
     }
 
