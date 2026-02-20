@@ -7,7 +7,9 @@ pipeline {
     }
 
     environment {
-        SONAR_SERVER = 'SonarQube'
+        APP_NAME  = "myapp"
+    NOTIFY_TO = "sabinashaik228@gmail.com"
+
     }
 
     stages {
