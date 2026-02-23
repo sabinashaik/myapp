@@ -1,0 +1,126 @@
+pipeline {
+    agent any
+
+    tools {
+        maven 'MAVEN3'
+        jdk 'JDK21'
+    }
+
+    environment {
+        APP_NAME     = "myapp"
+        TOMCAT_CREDS = "tomcat-creds"
+        NOTIFY_TO    = "sabinashaik228@gmail.com"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Determine Environment') {
+            steps {
+                script {
+
+                    if (env.BRANCH_NAME == "main") {
+                        env.ENV_NAME = "prod"
+                        env.TOMCAT_URL = "http://localhost:8084/manager/text"
+                    }
+                    else if (env.BRANCH_NAME.startsWith("qa/")) {
+                        env.ENV_NAME = "qa"
+                        env.TOMCAT_URL = "http://localhost:8083/manager/text"
+                    }
+                    else if (env.BRANCH_NAME.startsWith("release/")) {
+                        env.ENV_NAME = "staging"
+                        env.TOMCAT_URL = "http://localhost:8085/manager/text"
+                    }
+                    else {
+                        env.ENV_NAME = "dev"
+                        env.TOMCAT_URL = "http://localhost:8082/manager/text"
+                    }
+
+                    env.CONTEXT_PATH = "/${APP_NAME}"
+
+                    echo "Branch: ${env.BRANCH_NAME}"
+                    echo "Environment: ${env.ENV_NAME}"
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'mvn clean package'
+            }
+        }
+ stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh 'mvn sonar:sonar'
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 2, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: "${env.TOMCAT_CREDS}",
+                    usernameVariable: 'TOMCAT_USER',
+                    passwordVariable: 'TOMCAT_PASS'
+                )]) {
+
+                    sh """
+                    curl --fail -u $TOMCAT_USER:$TOMCAT_PASS \
+                    -T target/${env.APP_NAME}.war \
+                    "${env.TOMCAT_URL}/deploy?path=${env.CONTEXT_PATH}&update=true"
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+
+        success {
+            emailext(
+                subject: "Pipeline SUCCESS - ${env.JOB_NAME}",
+                body: """SUCCESS
+
+Branch: ${env.BRANCH_NAME}
+Environment: ${env.ENV_NAME}
+Build Number: ${env.BUILD_NUMBER}
+URL: ${env.BUILD_URL}
+""",
+                to: "${env.NOTIFY_TO}"
+            )
+        }
+
+        failure {
+            emailext(
+                subject: "Pipeline FAILURE - ${env.JOB_NAME}",
+                body: """FAILURE
+
+Branch: ${env.BRANCH_NAME}
+Environment: ${env.ENV_NAME}
+Build Number: ${env.BUILD_NUMBER}
+URL: ${env.BUILD_URL}
+""",
+                to: "${env.NOTIFY_TO}"
+            )
+        }
+
+        always {
+            cleanWs()
+        }
+    }
+}
+
